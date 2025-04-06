@@ -1,0 +1,53 @@
+## GERDAU
+
+import yfinance as yf
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+from sklearn.neural_network import MLPRegressor
+
+dados_gerdau = yf.download('GOAU4.SA', period='14d', interval='1h')
+
+fechamento_gerdau = dados_gerdau['Close']
+
+normalizador = MinMaxScaler()
+fechamento_gerdau_normalizado = normalizador.fit_transform(fechamento_gerdau.values.reshape(-1, 1))
+
+X = fechamento_gerdau_normalizado[:-8]
+y = fechamento_gerdau_normalizado[8:]
+
+indice_divisao = int(len(X) * 0.8)
+X_treino, X_teste = X[:indice_divisao], X[indice_divisao:]
+y_treino, y_teste = y[:indice_divisao], y[indice_divisao:]
+
+kernel = C(1.0, (1e-3, 1e3)) * RBF(1.0, (1e-2, 1e2))
+modelo_gp = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+modelo_gp.fit(X_treino, y_treino)
+
+modelo_mlp = MLPRegressor(hidden_layer_sizes=(50,), max_iter=1000, random_state=42)
+modelo_mlp.fit(X_treino, y_treino.ravel())
+
+horas_futuras = 8
+X_futuro_gp = np.linspace(0, 1, horas_futuras).reshape(-1, 1)
+X_futuro_mlp = np.linspace(0, 1, horas_futuras).reshape(-1, 1)
+
+y_teste_desnormalizado = normalizador.inverse_transform(y_teste)
+
+previsao_gp_futuro, sigma_gp_futuro = modelo_gp.predict(X_futuro_gp, return_std=True)
+previsao_mlp_futuro = modelo_mlp.predict(X_futuro_mlp)
+
+previsao_gp_futuro_desnormalizado = normalizador.inverse_transform(previsao_gp_futuro.reshape(-1, 1))
+previsao_mlp_futuro_desnormalizado = normalizador.inverse_transform(previsao_mlp_futuro.reshape(-1, 1))
+
+plt.figure(figsize=(40, 10))
+plt.plot(y_teste_desnormalizado, label='Real', linestyle='--')
+plt.plot(np.arange(len(y_teste_desnormalizado), len(y_teste_desnormalizado) + horas_futuras), previsao_gp_futuro_desnormalizado, label='Previsão Processo Gaussiano (Futuro)', marker='o')
+
+plt.xlabel('Horas')
+plt.ylabel('Preço de Fechamento')
+plt.title('Previsão de Preços das Ações da Gerdau para 30 horas no futuro')
+plt.legend()
+plt.show()
